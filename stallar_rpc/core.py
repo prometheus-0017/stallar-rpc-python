@@ -172,7 +172,7 @@ class Client:
         self.args_auto_wrapper = auto_wrapper
 
     def setSender(self, sender: ISender):
-        if self.sender is not None:
+        if self.sender is not None and not isinstance(self.sender, NotImplementSender):
             raise ValueError('sender already set')
         self.sender = sender
 
@@ -303,7 +303,7 @@ options: Dict[Union[str, symbol], 'MessageReceiverOptions'] = {}
 default_host = symbol('defaultHost')
 
 def getOrCreateOption(id_: Optional[Union[str, symbol]] = None) -> 'MessageReceiverOptions':
-    if id_ is None:
+    if id_ is None or id_ == hostId:
         id_ = default_host
     if isinstance(id_, (str, symbol)):
         if id_ not in options:
@@ -342,8 +342,12 @@ class MessageReceiver:
         self.resultAutoWrapper = auto_wrapper
 
     async def withContext(self, message, client, args, func):
-        context = {}
         result = {}
+        def setResult(reply:Response):
+            result['value'] = reply
+        context = {
+            "setResult":setResult
+        }
 
         def generate_interceptor_executor(index_of_interceptor):
             if index_of_interceptor < len(self.interceptors):
@@ -397,6 +401,10 @@ class MessageReceiver:
         self.getReqPending()[id] = {'resolve': resolve, 'reject': reject}
 
     async def onReceiveMessage(self,message:Union[Request,Response], client_for_call_back:Client):
+        if(client_for_call_back==None):
+            raise Exception("clientForCallBack must not null")
+        if(isinstance(client_for_call_back,Client)):
+            raise Exception("clientForCallBack must be a Client")
         # print(f"{self.getHostId()} received a "
         #     f"{'reply, which is for ' + message['id'] + ' and it is ' + message['idFor'] if message['idFor'] else 'request, which id is ' + message['id']}")
 
