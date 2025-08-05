@@ -9,6 +9,7 @@ ArgObjType = Literal['proxy', 'data', None]
 class dynamic_object(object):
     pass
 
+
 class PreArgObj(Generic[T]):
     def __init__(self, arg_type: str, data: T):
         self.type = arg_type
@@ -177,10 +178,13 @@ class Client:
         self.sender = sender
 
     def putAwait(self, id_: str, resolve: Callable[[Any], None], reject: Callable[[Any], None]):
-        print(f"{self.getHostId()} is waiting for {id_}")
+        # print(f"{self.getHostId()} is waiting for {id_}")
         getOrCreateOption(self.host_id).request_pending_dict[id_] = {'resolve': resolve, 'reject': reject}
 
     async def waitForRequest(self, request: Request) -> dynamic_object:
+        if(debugFlag):
+            print(f"{self.getHostId()} is waiting for {request['id']}")
+            print(request)
         sender = self.sender
         future = asyncio.Future()
 
@@ -251,12 +255,17 @@ class Client:
                     raise ValueError('no such function')
 
             if(hasattr(result,'__call__')):
-                async def call_func(*args):
-                    return await result.__call__(*args)
-                def __getitem__(key):
-                    return result[key]
-                call_func.__getitem__ = __getitem__
-                result = call_func
+                def closure(result0):
+                    async def call_func(*args):
+                        return await result0.__call__(*args)
+                    def __getitem__(key):
+                        if(key=="__call__"):
+                            return call_func
+                        return result0[key]
+                    
+                    call_func.__getitem__ = __getitem__
+                    return call_func
+                result=closure(result)
 
             self.getRunnableProxyManager().set(data['id'], result)
             return result
@@ -327,7 +336,10 @@ class MessageReceiverOptions:
         self.runnable_proxy_manager = RunnableProxyManager()
         self.hostId = ''
         self.request_pending_dict = {}
-
+debugFlag=False
+def setDebugFlag(flag):
+    global debugFlag
+    debugFlag=flag
 
 class MessageReceiver:
     def __init__(self, host_id=None):
@@ -390,6 +402,8 @@ class MessageReceiver:
         self.setObject('main', self.rpc_server, False)
 
     def setObject(self, id, obj, with_context):
+        if(isinstance(obj,dict)):
+            print('warning: the object of setObject should be an object, but you passed a dict')
         self.getProxyManager().set(obj, id)
         if with_context:
             self.object_with_context.add(id)
@@ -403,10 +417,12 @@ class MessageReceiver:
     async def onReceiveMessage(self,message:Union[Request,Response], client_for_call_back:Client):
         if(client_for_call_back==None):
             raise Exception("clientForCallBack must not null")
-        if(isinstance(client_for_call_back,Client)):
+        if(isinstance(client_for_call_back,Client)==False):
             raise Exception("clientForCallBack must be a Client")
-        # print(f"{self.getHostId()} received a "
-        #     f"{'reply, which is for ' + message['id'] + ' and it is ' + message['idFor'] if message['idFor'] else 'request, which id is ' + message['id']}")
+        if(debugFlag):
+            print(f"{self.getHostId()} received a "+
+            f"{'reply, which is for ' + message['id'] + ' and it is ' + message.get('idFor') if message.get('idFor') else 'request, which id is ' + message['id']}")
+            print(message);
 
 
         def isRequest(message:Union[Request,Response]):
@@ -436,6 +452,9 @@ class MessageReceiver:
                         result = await self.withContext(message, client_for_call_back, args, getattr(object, message['method']))
                     else:
                         result = getattr(object, message['method'])(*args)
+                        
+                if(hasattr(result,'__await__')):
+                    result=await result
 
                 result = self.resultAutoWrapper(result)
                 wrapped_result = client_for_call_back.toArgObj(result)
@@ -476,7 +495,7 @@ idCOunt=0
 def getId() -> str:
     global idCOunt
     idCOunt+=1
-    return str(idCOunt)
+    return f'{hostId}{idCOunt}'
 
 # Example usage
 if __name__ == "__main__":

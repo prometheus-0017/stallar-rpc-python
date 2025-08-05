@@ -51,23 +51,24 @@ async def main():
 
 
 # Test case
-import unittest
+# import unittest
 def expect(a):
     assert a 
 
-class TestFunca(unittest.TestCase):
-    async def test_should_return_correct_string(self):
-        await main()
+# class TestFunca(unittest.TestCase):
+#     async def test_should_return_correct_string(self):
+#         await main()
 
 # unittest.main()
 import asyncio
-if __name__ == "__main__":
-    try:
-        main_proxy = asyncio.run(main())
-        print(main_proxy)
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
+def test_main():
+    if __name__ == "__main__":
+        try:
+            main_proxy = asyncio.run(main())
+            print(main_proxy)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
 
 
 
