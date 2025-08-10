@@ -1,6 +1,6 @@
 # stallar-rpc-python
 
-stallar-rpc is an RPC framework that superficially supports passing objects and callbacks. Of course, in reality, no objects are actually migrated; the actual computation still occurs where it originally resides.
+xuri-rpc is an RPC framework that superficially supports passing objects and callbacks. Of course, in reality, no objects are actually migrated; the actual computation still occurs where it originally resides.
 
 Currently, only methods on objects can be passed; passing properties is not yet supported.
 

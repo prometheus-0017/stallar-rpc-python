@@ -1,5 +1,5 @@
-# stallar-rpc-python
-stallar-rpc是一款在表面上支持了传递对象和回调的RPC框架。当然，实际上。并没有对象发生迁移，实际的计算还发生在它本来的位置。
+# xuri-rpc-python
+xuri-rpc是一款在表面上支持了传递对象和回调的RPC框架。当然，实际上。并没有对象发生迁移，实际的计算还发生在它本来的位置。
 
 目前只支持传递对象上的方法，暂不支持传递属性。
 
@@ -27,7 +27,7 @@ stallar-rpc是一款在表面上支持了传递对象和回调的RPC框架。当
 ## 安装
 
 ```
-pip install stallar-rpc
+pip install xuri-rpc
 ```
 
 ## 示例
@@ -42,8 +42,8 @@ pip install stallar-rpc
 import asyncio
 import json
 import websockets
-from stallar_rpc import PlainProxyManager, RunnableProxyManager, MessageReceiver, Client, asProxy, getMessageReceiver, setHostId
-from stallar_rpc import setDebugFlag
+from xuri_rpc import PlainProxyManager, RunnableProxyManager, MessageReceiver, Client, asProxy, getMessageReceiver, setHostId
+from xuri_rpc import setDebugFlag
 setDebugFlag(True)
 # 设置hostName
 setHostId('backend')
@@ -57,7 +57,7 @@ class Sender:
         await self.ws.send(json.dumps(message))
 
 # 设置用于提供起始方法的main对象
-from stallar_rpc import dict2obj
+from xuri_rpc import dict2obj
 async def plus(a,b,callback):
     await callback(a + b)
     return a+b
@@ -93,9 +93,9 @@ except Exception as error:
 import asyncio
 import json
 import websockets
-from stallar_rpc import PlainProxyManager, RunnableProxyManager, MessageReceiver, Client, asProxy, getMessageReceiver, setHostId
+from xuri_rpc import PlainProxyManager, RunnableProxyManager, MessageReceiver, Client, asProxy, getMessageReceiver, setHostId
 setHostId('backend')
-from stallar_rpc import setDebugFlag
+from xuri_rpc import setDebugFlag
 setDebugFlag(True)
 
 
@@ -149,8 +149,8 @@ asyncio.run(main())
 服务端
 
 ```
-from stallar_rpc import PlainProxyManager, RunnableProxyManager, MessageReceiver, Client, asProxy, getMessageReceiver, setHostId
-from stallar_rpc import dict2obj
+from xuri_rpc import PlainProxyManager, RunnableProxyManager, MessageReceiver, Client, asProxy, getMessageReceiver, setHostId
+from xuri_rpc import dict2obj
 import websockets
 import asyncio
 import json
@@ -169,7 +169,7 @@ class Sender:
 # 设置用于提供起始方法的main对象
 getMessageReceiver().setMain(dict2obj({
 }))
-from stallar_rpc import dict2obj
+from xuri_rpc import dict2obj
 getMessageReceiver().setObject("greeting",dict2obj( {
     "greeting": lambda context: f"hi,{context['a']} and {context['b']}"
 }), True)
@@ -209,7 +209,7 @@ if __name__ == "__main__":
 import asyncio
 import json
 import websockets
-from stallar_rpc import PlainProxyManager, RunnableProxyManager, MessageReceiver, Client, asProxy, getMessageReceiver, setHostId
+from xuri_rpc import PlainProxyManager, RunnableProxyManager, MessageReceiver, Client, asProxy, getMessageReceiver, setHostId
 
 # define a sender
 class Sender:
@@ -270,7 +270,7 @@ asyncio.run(main())
 setHostId('backend')
 
 #setMain&setObject接受一个对象作为参数而非字典。注意不要弄错了。
-from stallar_rpc import dict2obj
+from xuri_rpc import dict2obj
 
 #设置用于提供起始方法的main对象,在这个面对象里，你应当添加一些方法返回更多的远程对象。或者你也可以直接就在这个main方法里实现一些业务逻辑的调用。
 async def plus(a,b,callback):
