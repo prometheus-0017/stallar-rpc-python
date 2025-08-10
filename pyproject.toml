@@ -1,7 +1,7 @@
 [project]
-name = "stallar-rpc"
+name = "xuri-rpc"
 version = "0.1.0"
-description = "stallar-rpc in python"
+description = "xuri-rpc in python"
 authors = [
     {name = "prometheus-0017"}
 ]
@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
 ]
-packages = [ { include = "stallar_rpc" } ] # 指定要包含的 Python 包目录
+packages = [ { include = "xuri_rpc" } ] # 指定要包含的 Python 包目录
 
 [tool.poetry]
 
