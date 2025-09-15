@@ -112,7 +112,7 @@ async def main():
     setHostId('frontend')
     client = Client()
 
-    ws = await websockets.connect('ws:#localhost:18081')
+    ws = await websockets.connect('ws://localhost:18081')
 
     async def on_message(data):
         await getMessageReceiver().onReceiveMessage(json.loads(data), client)
@@ -224,7 +224,7 @@ async def main():
     setHostId('frontend')
     client = Client()
 
-    ws = await websockets.connect('ws:#localhost:18081')
+    ws = await websockets.connect('ws://localhost:18081')
     
     # Listen for messages
     async def listen():
@@ -317,7 +317,7 @@ client = Client()
 
 
 #创建一个管道。这个管道。既被用于发送信息，也被用于接收返回结果。
-ws = await websockets.connect('ws:#localhost:18081')
+ws = await websockets.connect('ws://localhost:18081')
 
 async def on_message(data):
     #创建一个receiver,你发出去的东西总得找个地方接返回结果，是吧？

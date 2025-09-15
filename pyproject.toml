@@ -1,6 +1,6 @@
 [project]
 name = "xuri-rpc"
-version = "0.1.0"
+version = "0.1.1"
 description = "xuri-rpc in python"
 authors = [
     {name = "prometheus-0017"}

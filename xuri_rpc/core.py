@@ -1,14 +1,16 @@
-from typing import Any, Dict, List, Optional, TypeVar, Generic, Callable, Mapping, Union, Set
+from typing import Awaitable,Any, Dict, List, Optional, TypeVar, Generic, Callable, Mapping, Union, Set
 import weakref
+from typing import cast
 import asyncio
 import uuid
 from typing import TypedDict,Literal
 
+from typeguard import check_type, TypeCheckError
+
 T = TypeVar('T')
 ArgObjType = Literal['proxy', 'data', None]
-class dynamic_object(object):
+class dynamic_object():
     pass
-
 
 class PreArgObj(Generic[T]):
     def __init__(self, arg_type: str, data: T):
@@ -20,7 +22,7 @@ class ArgObj(TypedDict):
 
 class PlainProxy(TypedDict):
     id: str
-    hostId: str
+    hostId: Union[str,'symbol']
     members: List[Dict[str, str]]
 
 hostId: Optional[str] = None
@@ -31,26 +33,25 @@ def setHostId(id: str):
     getOrCreateOption(None).hostId = id
 
 def _deleteProxy(id: str, host_id: Optional[str] = None):
-    getOrCreateOption(host_id).plainProxyManager.delete_by_id(id)
+    getOrCreateOption(host_id).plainProxyManager.deleteById(id)
 
 class Request(TypedDict):
     id: str
     objectId: str
     method: str
-    args: List[ArgObj[Any]]
+    meta: Dict[str, Any]
+    args: List[ArgObj]
 
 class Response(TypedDict):
     id: str
-    idFor: Optional[str]
+    idFor: str
     status: Optional[int]
     trace: Optional[str]
-    data: Optional[ArgObj[Any]]
+    data: Optional[ArgObj]
 
 Message=Union[Response,Request]
 # Not = Mapping[str, Any]
-
-class RunnableProxy:
-    pass
+RunnableProxy=Any
 
 class RunnableProxyManager:
     def __init__(self):
@@ -70,23 +71,23 @@ class RunnableProxyManager:
 
 class PlainProxyManager:
     def __init__(self):
-        self.proxy_map: Dict[dynamic_object, str] = {}
-        self.reverse_proxy_map: Dict[str, dynamic_object] = {}
+        self.proxy_map: Dict[Any, str] = {}
+        self.reverse_proxy_map: Dict[str, Any] = {}
         self.holding={}
         self.pythonId=id
 
-    def set(self, obj: dynamic_object, id: str):
+    def set(self, obj: Any, id: str):
         self.proxy_map[self.pythonId(obj)] = id
         self.reverse_proxy_map[id] = obj
         self.holding[self.pythonId(obj)]=obj
 
-    def getById(self, id: str) -> Optional[dynamic_object]:
+    def getById(self, id: str) -> Optional[Any]:
         return self.reverse_proxy_map.get(id)
 
-    def get(self, obj: dynamic_object) -> str:
+    def get(self, obj: Any) -> str:
         return self.proxy_map[self.pythonId(obj)]
 
-    def has(self, obj: dynamic_object) -> bool:
+    def has(self, obj: Any) -> bool:
         return self.pythonId(obj) in self.proxy_map
 
     def deleteById(self, id: str):
@@ -96,14 +97,14 @@ class PlainProxyManager:
             del self.reverse_proxy_map[id]
             del self.holding[self.pythonId(obj)]
 
-    def delete(self, obj: dynamic_object):
+    def delete(self, obj: Any):
         id = self.proxy_map.get(obj)
         if id is not None:
             del self.reverse_proxy_map[id]
             del self.proxy_map[obj]
             del self.holding[self.pythonId(obj)]
 
-def asProxy(obj: dynamic_object, host_id_from: Optional[str] = None) -> PreArgObj[Union[PlainProxy, None]]:
+def asProxy(obj: Any, host_id_from: Optional[Union['symbol',str]] = None) -> PreArgObj[Union[PlainProxy, None]]:
     option = getOrCreateOption(host_id_from)
     proxy_manager = option.plainProxyManager
     host_id = option.hostId
@@ -118,7 +119,7 @@ def asProxy(obj: dynamic_object, host_id_from: Optional[str] = None) -> PreArgOb
     id_ = proxy_manager.get(obj)
 
     if callable(obj):
-        proxy: PlainProxy = {
+        proxy: Optional[PlainProxy] = {
             'id': id_,
             'hostId': host_id,
             'members': [{'type': 'function', 'name': '__call__'}]
@@ -156,7 +157,7 @@ def dict2obj(d: dict):
         setattr(obj, k, v)
     return obj
 class ISender:
-    def send(self, message: Union[Request, Response]):
+    def send(self, message: Union[Request, Response])->Awaitable[Any]:
         raise NotImplementedError('Not implement')
 
 class NotImplementSender(ISender):
@@ -181,10 +182,12 @@ class Client:
         # print(f"{self.getHostId()} is waiting for {id_}")
         getOrCreateOption(self.host_id).request_pending_dict[id_] = {'resolve': resolve, 'reject': reject}
 
-    async def waitForRequest(self, request: Request) -> dynamic_object:
+    async def waitForRequest(self, request: Request) ->Any:
         if(debugFlag):
-            print(f"{self.getHostId()} is waiting for {request['id']}")
-            print(request)
+            assertRequests(request)
+            assertJSON(request)
+            # print(f"{self.getHostId()} is waiting for {request['id']}")
+            # print(request)
         sender = self.sender
         future = asyncio.Future()
 
@@ -197,11 +200,11 @@ class Client:
         callback(future.set_result, future.set_exception)
         return await future
 
-    def toArgObj(self, obj: Any) -> ArgObj[Any]:
+    def toArgObj(self, obj: Any) -> ArgObj:
         if isinstance(obj, PreArgObj):
-            return dict(type='proxy',data=obj.data)
+            return ArgObj(type='proxy',data=obj.data)
         else:
-            return dict(type='data', data=obj)
+            return ArgObj(type='data', data=obj)
 
     def getHostId(self) -> str:
         if self.host_id is None:
@@ -215,7 +218,7 @@ class Client:
     def getRunnableProxyManager(self) -> RunnableProxyManager:
         return getOrCreateOption(self.host_id).runnable_proxy_manager
 
-    def reverseToArgObj(self, arg_obj: ArgObj[Any]) -> Any:
+    def reverseToArgObj(self, arg_obj: ArgObj) -> Any:
         if arg_obj['type'] == 'data':
             return arg_obj['data']
         else:
@@ -225,9 +228,9 @@ class Client:
             if data['hostId'] == self.host_id:
                 return self.getProxyManager().getById(data['id'])
 
-            dynamic_object_ = self.getRunnableProxyManager().get(data['id'])
-            if dynamic_object_ is not None:
-                return dynamic_object_
+            Any_ = self.getRunnableProxyManager().get(data['id'])
+            if Any_ is not None:
+                return Any_
 
             for _member in data['members']:
                 key = _member['type']
@@ -271,12 +274,13 @@ class Client:
             return result
 
     async def getObject(self, objectId: str) -> RunnableProxy:
-        request: Request = {
-            'id': getId(),
-            'objectId': 'main0',
-            'method': 'getMain',
-            'args': [self.toArgObj(objectId)]
-        }
+        request: Request = Request(
+            id=getId(),
+            objectId='main0',
+            method='getMain',
+            meta={},
+            args=[self.toArgObj(objectId)]
+        )
         res = await self.waitForRequest(request)
         return res
 
@@ -334,7 +338,7 @@ class MessageReceiverOptions:
         """
         self.plainProxyManager = PlainProxyManager()
         self.runnable_proxy_manager = RunnableProxyManager()
-        self.hostId = ''
+        self.hostId:Union[str,symbol] = ''
         self.request_pending_dict = {}
 debugFlag=False
 def setDebugFlag(flag):
@@ -348,7 +352,18 @@ class MessageReceiver:
         self.object_with_context = set()
         self.resultAutoWrapper = shallowAutoWrapper
         self.host_id = host_id
-        self.getProxyManager().set(dict2obj({'getMain': lambda objectId: asProxy(self.getProxyManager().getById(objectId), self.getHostId())}), 'main0')
+        self.getProxyManager().set(
+            dict2obj(
+                {'getMain': 
+                    lambda objectId: 
+                        asProxy(
+                            self.getProxyManager().getById(objectId),
+                            self.getHostId()
+                        )
+                }
+            ),
+            'main0'
+        )
 
     def setResultAutoWrapper(self, auto_wrapper):
         self.resultAutoWrapper = auto_wrapper
@@ -419,17 +434,22 @@ class MessageReceiver:
             raise Exception("clientForCallBack must not null")
         if(isinstance(client_for_call_back,Client)==False):
             raise Exception("clientForCallBack must be a Client")
-        if(debugFlag):
-            print(f"{self.getHostId()} received a "+
-            f"{'reply, which is for ' + message['id'] + ' and it is ' + message.get('idFor') if message.get('idFor') else 'request, which id is ' + message['id']}")
-            print(message);
-
 
         def isRequest(message:Union[Request,Response]):
             return message.get('idFor')==None
 
+        if(debugFlag):
+            if(not isRequest(message)):
+                # assert type(message)==Response
+                message = cast(Response,message)
+                
+                print(f"{self.getHostId()} received a "+
+                f"{'reply, which is for ' + message['id'] + ' and it is ' + message.get('idFor') if message.get('idFor') else 'request, which id is ' + message['id']}")
+                print(message);
+
         # Is request, not reply
         if(isRequest(message)):
+            message=cast(Request,message)
             args = [client_for_call_back.reverseToArgObj(x) for x in message['args']]
 
             try:
@@ -467,18 +487,24 @@ class MessageReceiver:
                 })
                 asyncio.ensure_future(cor)
             except Exception as e:
-                trace_str = '\n'.join([x.strip() for x in str(e.__traceback__).split('\n')])
-                client_for_call_back.sender.send({
-                    'id': getId(),
-                    'idFor': message['id'],
-                    'data': dict(type='data',data=None),
-                    'trace': trace_str,
-                    'status': -1
-                })
+                import traceback
+                trace_str=traceback.format_exc()
+                # trace_str = '\n'.join([x.strip() for x in str(e.__traceback__).split('\n')])
+                res=Response(
+                    id=getId(),
+                    idFor=message['id'],
+                    data=None,
+                    trace=trace_str,
+                    status=-1
+                )
+                cor=client_for_call_back.sender.send(res)
+                asyncio.ensure_future(cor)
+
                 import traceback
                 traceback.print_exc()
 
         else:
+            message=cast(Response,message)
             idFor=message.get('idFor')
             req_pending = self.getReqPending()
             if req_pending[idFor] is None:
@@ -488,6 +514,7 @@ class MessageReceiver:
             req = req_pending[idFor]
             del req_pending[idFor]
             if message['status'] == 200:
+                assert message['data']
                 req['resolve'](client_for_call_back.reverseToArgObj(message['data']))
             else:
                 req['reject'](Exception(message))
@@ -496,6 +523,18 @@ def getId() -> str:
     global idCOunt
     idCOunt+=1
     return f'{hostId}{idCOunt}'
+
+def assertRequests(message: Request):
+    check_type( message, Request)
+import json
+def assertJSON(message:Request):
+    for i in range(len(message['args'])):
+        arg=message['args'][i]
+        try:
+            json.dumps(arg)
+        except Exception as e:
+            raise TypeCheckError(f'{i} is not JSON serializable')
+
 
 # Example usage
 if __name__ == "__main__":
