@@ -7,8 +7,9 @@ authors = [
 ]
 license = {text = "MIT"}
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 dependencies = [
+    "typeguard (>=4.4.4,<5.0.0)"
 ]
 packages = [ { include = "xuri_rpc" } ] # 指定要包含的 Python 包目录
 

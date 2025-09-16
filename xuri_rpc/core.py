@@ -497,6 +497,8 @@ class MessageReceiver:
                     trace=trace_str,
                     status=-1
                 )
+                if(debugFlag):
+                    assertJSONForResult(res)
                 cor=client_for_call_back.sender.send(res)
                 asyncio.ensure_future(cor)
 
@@ -527,6 +529,12 @@ def getId() -> str:
 def assertRequests(message: Request):
     check_type( message, Request)
 import json
+def assertJSONForResult(message:Response):
+    obj=message.get('data')
+    try:
+        json.dumps(message['data'])
+    except Exception as e:
+        raise Exception(f'{obj} is not JSON serializable')
 def assertJSON(message:Request):
     for i in range(len(message['args'])):
         arg=message['args'][i]
