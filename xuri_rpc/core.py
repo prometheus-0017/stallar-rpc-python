@@ -478,14 +478,13 @@ class MessageReceiver:
 
                 result = self.resultAutoWrapper(result)
                 wrapped_result = client_for_call_back.toArgObj(result)
-                cor=client_for_call_back.sender.send({
-                    'id': getId(),
-                    'idFor': message['id'],
-                    'data': wrapped_result,
-                    'trace':None,
-                    'status': 200
-                })
-                asyncio.ensure_future(cor)
+                res=Response(
+                    id=getId(),
+                    idFor=message['id'],
+                    data=wrapped_result,
+                    trace=None,
+                    status=200
+                )
             except Exception as e:
                 import traceback
                 trace_str=traceback.format_exc()
@@ -497,13 +496,15 @@ class MessageReceiver:
                     trace=trace_str,
                     status=-1
                 )
-                if(debugFlag):
-                    assertJSONForResult(res)
-                cor=client_for_call_back.sender.send(res)
-                asyncio.ensure_future(cor)
-
                 import traceback
                 traceback.print_exc()
+
+            if(debugFlag):
+                assertJSONForResult(res)
+
+            cor=client_for_call_back.sender.send(res)
+            asyncio.ensure_future(cor)
+
 
         else:
             message=cast(Response,message)
