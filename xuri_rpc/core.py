@@ -195,7 +195,13 @@ class Client:
             if sender is None:
                 raise ValueError('sender not set')
             self.putAwait(request['id'], resolve, reject)
-            asyncio.ensure_future(sender.send(request))
+            async def sendFuture():
+                try:
+                    await sender.send(request)
+                except Exception as e:
+                    reject(e)
+
+            asyncio.ensure_future(sendFuture())
 
         callback(future.set_result, future.set_exception)
         return await future
@@ -500,7 +506,7 @@ class MessageReceiver:
                 traceback.print_exc()
 
             if(debugFlag):
-                assertJSONForResult(res)
+                assertJSONForResult(object,message,res)
 
             cor=client_for_call_back.sender.send(res)
             asyncio.ensure_future(cor)
@@ -530,12 +536,12 @@ def getId() -> str:
 def assertRequests(message: Request):
     check_type( message, Request)
 import json
-def assertJSONForResult(message:Response):
-    obj=message.get('data')
+def assertJSONForResult(object:Any,request:Request,message:Response):
+    jsonObject=message.get('data')
     try:
-        json.dumps(message['data'])
+        json.dumps(jsonObject)
     except Exception as e:
-        raise Exception(f'{obj} is not JSON serializable')
+        raise Exception(f'the result of {type(object)}.{request['method']} is not JSON serializable:{jsonObject}')
 def assertJSON(message:Request):
     for i in range(len(message['args'])):
         arg=message['args'][i]
