@@ -226,7 +226,7 @@ class Client:
 
     def reverseToArgObj(self, arg_obj: ArgObj) -> Any:
         if arg_obj['type'] == 'data':
-            return arg_obj['data']
+            return arg_obj.get('data')
         else:
             result=dynamic_object()
             data: PlainProxy = arg_obj['data']
