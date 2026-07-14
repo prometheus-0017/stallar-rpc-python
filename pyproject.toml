@@ -1,23 +1,30 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "xuri-rpc"
-version = "0.2.2"
-description = "xuri-rpc in python"
-authors = [
-    {name = "prometheus-0017"}
-]
-license = {text = "MIT"}
+version = "2.0.1"
+description = "A Python RPC framework with remote callback support"
 readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "prometheus0017"},
+]
+keywords = ["rpc", "remote", "callback"]
 requires-python = ">=3.9"
 dependencies = [
-    "typeguard (>=4.4.4,<5.0.0)"
+    "cbor2>=5.4",
 ]
-packages = [ { include = "xuri_rpc" } ] # 指定要包含的 Python 包目录
 
-[tool.poetry]
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+]
 
-[tool.poetry.group.dev.dependencies]
-pytest = "^8.4.1"
+[tool.setuptools.packages.find]
+include = ["xuri_rpc*"]
 
-[build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

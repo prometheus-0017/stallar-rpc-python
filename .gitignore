@@ -1,2 +1,4 @@
-/dist
-/ptest/nul-except-check/__pycache__/*.pyc
+dist
+*.pyc
+*.egg-info
+__pycache__

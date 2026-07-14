@@ -1,84 +1,75 @@
-# 假设这些类和函数已由某个模块提供
-from stallar_rpc import  Message,MessageReceiverOptions,RunnableProxyManager,PlainProxyManager,setHostId,Client,ISender,asProxy,getMessageReceiver,MessageReceiver 
-from stallar_rpc import dict2obj
+"""test_context2.py — 拦截器链测试 (mirrors context2.test.ts)"""
+import pytest
+from xuri_rpc.rpc import (
+    Client, MessageReceiver, setHostId, asProxy, getMessageReceiver,
+)
 
-import asyncio
+
+class DirectSender:
+    def __init__(self, client_callback: Client, msg_receiver: MessageReceiver):
+        self.client_callback = client_callback
+        self.msg_receiver = msg_receiver
+
+    async def send(self, message: dict):
+        await self.msg_receiver.onReceiveMessage(message, self.client_callback)
 
 
-async def main():
+class MainService:
+    def hello(self, a, b, on_result):
+        return (on_result(a + b), a + b)[1]
+
+    def getObject(self):
+        return asProxy(
+            SayService(), 'backendJs'
+        )
+
+
+class SayService:
+    def say(self, name):
+        print('hello ', name)
+
+
+class ContextTestService:
+    def hello(self, context):
+        return f"hello {context.get('a')} and {context.get('b')}"
+
+
+@pytest.mark.asyncio
+async def test_interceptor_chain():
     setHostId('frontJs')
-
     hostId = 'backendJs'
 
-    messageReceiverBackend = MessageReceiver(hostId)
+    messageReceiver_backend = MessageReceiver(hostId)
 
-    class DirectSender(ISender):
-        def __init__(self, clientCallback: Client, msgReceiverTo: MessageReceiver):
-            self.clientCallback = clientCallback
-            self.msgReceiver = msgReceiverTo
+    messageReceiver_backend.setMain(MainService())
+    messageReceiver_backend.setObject(
+        'contextTest',
+        ContextTestService(),
+        True,
+    )
+    messageReceiver_backend.setResultAutoWrapper(lambda x: x)
 
-        async def send(self, message):
-            await self.msgReceiver.onReceiveMessage(message, self.clientCallback)
-            print('send', message)
-
-    objectTest = dict2obj({
-        'say': lambda name: print('hello ', name)
-    })
-
-    messageReceiverBackend.setMain(dict2obj({
-        # 'hello': lambda a, b, onResult: (async lambda: await onResult(a + b))(),
-        'getObject': lambda: asProxy(objectTest, hostId)
-    }))
-
-    messageReceiverBackend.setObject('contextTest',dict2obj( {
-        'hello': lambda context: f"hello {context.get('a')} and {context.get('b')}"
-    }), True)
-
-    messageReceiverBackend.setResultAutoWrapper(lambda x: x)
-
-    async def interceptor1(ctx, msg, clt, next_func):
+    async def interceptor1(ctx, msg, clt, next_fn):
         ctx['a'] = 'mike'
-        await next_func()
-        del ctx['a']
+        await next_fn()
+        ctx.pop('a', None)
 
-    async def interceptor2(ctx, msg, clt, next_func):
+    async def interceptor2(ctx, msg, clt, next_fn):
         ctx['b'] = 'jack'
-        await next_func()
-        del ctx['b']
+        await next_fn()
+        ctx.pop('b', None)
 
-    messageReceiverBackend.addInterceptor(interceptor1)
-    messageReceiverBackend.addInterceptor(interceptor2)
+    messageReceiver_backend.addInterceptor(interceptor1)
+    messageReceiver_backend.addInterceptor(interceptor2)
 
     client = Client()
-    clientOnBackend = Client(hostId)
-    sender = DirectSender(clientOnBackend, messageReceiverBackend)
-    backSender = DirectSender(client, getMessageReceiver())
-
+    client_on_backend = Client(hostId)
+    sender = DirectSender(client_on_backend, messageReceiver_backend)
+    back_sender = DirectSender(client, getMessageReceiver())
     client.sender = sender
-    clientOnBackend.sender = backSender
-
+    client_on_backend.sender = back_sender
     client.setArgsAutoWrapper(lambda x: x)
 
-    # 获取远程对象
-    rpc = await client.getObject('contextTest')
+    rpc = await client.get_object('contextTest')
     result = await rpc.hello()
-    
-    # 断言结果
-    assert result == 'hello mike and jack', f"Expected 'hello mike and jack', got {result}"
-
-
-# def test_funca():
-#     """模拟 describe('funca', ...) 中的 it(...) 测试"""
-#     asyncio.run(main())
-
-# 如果直接运行此脚本，可取消下面注释
-# asyncio.run(main())
-import asyncio
-def test_main():
-    if __name__ == "__main__":
-        try:
-            main_proxy = asyncio.run(main())
-            print(main_proxy)
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
+    assert result == 'hello mike and jack'

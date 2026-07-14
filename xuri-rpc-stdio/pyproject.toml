@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xuri-rpc-stdio"
+version = "1.0.0"
+description = "Stdio-based sender for xuri-rpc"
+license = {text = "MIT"}
+authors = [
+    {name = "prometheus0017"},
+]
+keywords = ["rpc", "remote", "callback", "stdio"]
+requires-python = ">=3.9"
+dependencies = [
+    "xuri-rpc>=1.0.0",
+    "cbor2>=5.4",
+]
+
+[tool.setuptools.packages.find]
+include = ["xuri_rpc_stdio*"]

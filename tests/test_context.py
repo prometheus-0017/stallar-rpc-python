@@ -1,86 +1,62 @@
-# 假设以下导入的类和函数已在某处定义并可用
-from stallar_rpc import  Message,MessageReceiverOptions,RunnableProxyManager,PlainProxyManager,setHostId,Client,ISender,asProxy,getMessageReceiver,MessageReceiver 
+"""test_context.py — 拦截器上下文测试 (mirrors context.test.ts)"""
+import pytest
+from xuri_rpc.rpc import (
+    Client, MessageReceiver, setHostId, asProxy, getMessageReceiver,
+)
 
-import asyncio
 
-from stallar_rpc import dict2obj
-async def main():
+class DirectSender:
+    def __init__(self, client_callback: Client, msg_receiver: MessageReceiver):
+        self.client_callback = client_callback
+        self.msg_receiver = msg_receiver
+
+    async def send(self, message: dict):
+        await self.msg_receiver.onReceiveMessage(message, self.client_callback)
+
+
+class MainService:
+    def hello(self, a, b, on_result):
+        return (on_result(a + b), a + b)[1]
+
+    def getObject(self):
+        return asProxy(
+            SayService(), 'backendJs'
+        )
+
+
+class SayService:
+    def say(self, name):
+        print('hello ', name)
+
+
+class ContextTestService:
+    def hello(self, context):
+        return 'hello'
+
+
+@pytest.mark.asyncio
+async def test_context_object():
     setHostId('frontJs')
-
     hostId = 'backendJs'
 
-    messageReceiverBackend = MessageReceiver(hostId)
+    messageReceiver_backend = MessageReceiver(hostId)
 
-    class DirectSender(ISender):
-        def __init__(self, clientCallback: Client, msgReceiverTo: MessageReceiver):
-            self.clientCallback = clientCallback
-            self.msgReceiver = msgReceiverTo
+    messageReceiver_backend.setMain(MainService())
+    messageReceiver_backend.setObject(
+        'contextTest',
+        ContextTestService(),
+        True,
+    )
+    messageReceiver_backend.setResultAutoWrapper(lambda x: x)
 
-        async def send(self, message):
-            await self.msgReceiver.onReceiveMessage(message, self.clientCallback)
-            print('send', message)
-
-    objectTest = {
-        'say': lambda name: print('hello ', name)
-    }
-
-    # 设置主对象（模拟 RPC 接口）
-    messageReceiverBackend.setMain(dict2obj({
-        'hello': lambda a, b, onResult: (asyncio.create_task(onResult(a + b)), a + b)[1],
-        'getObject': lambda: asProxy(objectTest, hostId)
-    }))
-
-    # 注册名为 'contextTest' 的对象
-    messageReceiverBackend.setObject('contextTest', dict2obj({
-        'hello': lambda context: 'hello'
-    }), True)
-
-    # 设置结果自动包装器（无操作）
-    messageReceiverBackend.setResultAutoWrapper(lambda x: x)
-
-    # 创建客户端实例
     client = Client()
-    clientOnBackend = Client(hostId)
-
-    # 创建双向发送器
-    sender = DirectSender(clientOnBackend, messageReceiverBackend)
-    backSender = DirectSender(client, getMessageReceiver())
-
-    # 绑定发送器
+    client_on_backend = Client(hostId)
+    sender = DirectSender(client_on_backend, messageReceiver_backend)
+    back_sender = DirectSender(client, getMessageReceiver())
     client.sender = sender
-    clientOnBackend.sender = backSender
-
-    # 设置参数自动包装（无操作）
+    client_on_backend.sender = back_sender
     client.setArgsAutoWrapper(lambda x: x)
 
-    # 获取远程代理对象
-    rpc = await client.getObject('contextTest')
-
-    # 调用远程方法
+    rpc = await client.get_object('contextTest')
     result = await rpc.hello()
-
-    # 断言结果（使用 Python 的 unittest 或 pytest 风格）
-    assert result == 'hello', f"Expected 'hello', but got {result}"
-
-
-# 测试用例包装（模拟 describe/it）
-# import pytest
-
-
-# @pytest.mark.asyncio
-# async def test_funca():
-#     """Simulates the describe/it block"""
-#     await main()
-
-
-# 如果直接运行此脚本，可取消下面注释
-# asyncio.run(main())
-import asyncio
-def test_main():
-    if __name__ == "__main__":
-        try:
-            main_proxy = asyncio.run(main())
-            print(main_proxy)
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
+    assert result == 'hello'
