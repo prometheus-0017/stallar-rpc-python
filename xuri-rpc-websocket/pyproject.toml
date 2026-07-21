@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "xuri-rpc-websocket"
-version = "1.0.0"
+version = "1.0.1"
 description = "WebSocket sender for xuri-rpc"
 license = {text = "MIT"}
 authors = [
