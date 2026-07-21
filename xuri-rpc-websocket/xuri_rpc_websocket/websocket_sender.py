@@ -199,17 +199,28 @@ async def createServer(
         remote_addr = ws.remote_address
         print(f'[WebSocket] Server connection handled: local port {local_addr[1]}, remote port {remote_addr[1]}, ws_id={id(ws)}')
 
-        session_id: str = str(uuid.uuid4())
-        conn_sender: WebSocketBinarySender = WebSocketBinarySender(ws, session_id)
-        # Register sender in session map at connection time
+        conn_sender: WebSocketBinarySender = WebSocketBinarySender(ws, None)
         conn_client: Client = Client(hostId)
-        conn_client.getSessionData()[session_id]=conn_sender
-        conn_client.setSender(lambda: conn_client.getSessionData()[session_id])
+
+        def setSessiont(data):
+            session_id: str = data.get('meta',{}).get('sessionId')
+            if(not session_id):
+                session_id=str(uuid.uuid4())
+
+            # Register sender in session map at connection time
+            conn_sender.session_id=session_id
+            conn_client.getSessionData()[session_id]=conn_sender
+            conn_client.setSender(lambda: conn_client.getSessionData()[session_id])
+
         connReceiver: MessageReceiver = serverReceiver
+        first=True
 
         try:
             async for raw in ws:
                 data = cbor2.loads(raw)
+                if(first):
+                    first=False
+                    setSessiont(data)
                 await connReceiver.onReceiveMessage(data, conn_client)
         except ConnectionClosed as e:
             import traceback
@@ -319,6 +330,7 @@ async def _listen(
                 # Extract sessionId from meta and update sender
                 meta = data.get('meta') or {}
                 if meta.get('sessionId'):
+                    logger.info(f"get session:{ meta.get('sessionId')}")
                     sender.session_id = meta['sessionId']
                 await messageReceiver.onReceiveMessage(data, client)
         except ConnectionClosed:
