@@ -1,11 +1,14 @@
 """
-WebSocket sender and connection helpers using CBOR binary format.
+WebSocket sender and connection helpers supporting both CBOR binary and
+JSON text formats.
 Requires: pip install websockets cbor2
 """
 import asyncio
+import base64
+import json
 import logging
 import uuid
-from typing import Any, Awaitable, Callable, Optional, Tuple, Dict, Union
+from typing import Any, Awaitable, Callable, Literal, Optional, Tuple, Dict, Union
 
 import cbor2
 from xuri_rpc.rpc import debugFlag
@@ -18,6 +21,52 @@ from websockets.legacy.client import WebSocketClientProtocol
 from xuri_rpc import Client, MessageReceiver, RpcMessage, ISender
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Base64 helpers (for embedding binary data inside JSON messages)
+# ---------------------------------------------------------------------------
+
+BYTES_PREFIX = "--^3jK7a%A8_Di0o77Z"
+
+
+def uint8_to_base64(data: bytes) -> str:
+    """Encode bytes to a base64 string."""
+    return base64.b64encode(data).decode("ascii")
+
+
+def base64_to_uint8(b64: str) -> bytes:
+    """Decode a base64 string back to bytes."""
+    return base64.b64decode(b64)
+
+
+# ---------------------------------------------------------------------------
+# JSON serializer / deserializer with base64 for bytes
+# ---------------------------------------------------------------------------
+
+def _json_replacer(obj: Any) -> Any:
+    """JSON default hook – converts bytes to prefixed base64 string."""
+    if isinstance(obj, (bytes, bytearray)):
+        return BYTES_PREFIX + uint8_to_base64(obj)
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+
+def _json_reviver(obj: dict) -> Any:
+    """JSON object_hook – restores prefixed base64 strings back to bytes."""
+    for key, value in obj.items():
+        if isinstance(value, str) and value.startswith(BYTES_PREFIX):
+            obj[key] = base64_to_uint8(value[len(BYTES_PREFIX):])
+    return obj
+
+
+def encode_text_message(message: RpcMessage) -> str:
+    """Serialize an RpcMessage to the text wire format (JSON with prefixed-base64 bytes)."""
+    return json.dumps(message, default=_json_replacer)
+
+
+def decode_text_message(raw: str) -> RpcMessage:
+    """Deserialize a text wire message back to an RpcMessage."""
+    return json.loads(raw, object_hook=_json_reviver)
 
 
 # ---------------------------------------------------------------------------
@@ -43,6 +92,8 @@ class WebSocketBinarySender(ISender):
     Both paths go through :meth:`ensure_connected` which uses an internal lock
     so that only one reconnection happens at a time.
     """
+
+    mode = "binary"
 
     def __init__(self, ws: Optional[WebSocketCommonProtocol], session_id: Optional[Union[str, Callable[[], Optional[str]]]] = None) -> None:
         self.ws: Optional[WebSocketCommonProtocol] = ws
@@ -170,6 +221,36 @@ class WebSocketBinarySender(ISender):
             raise Exception('failed to send message,ws broken')
 
 
+class WebSocketTextSender(WebSocketBinarySender):
+    """Sends RPC messages as JSON text over a WebSocket connection.
+
+    Binary values (``bytes`` / ``bytearray``) are encoded as base64 strings
+    prefixed with :data:`BYTES_PREFIX` so they can be round-tripped through
+    JSON and restored to ``bytes`` on the receiving side.
+
+    The reconnection logic is inherited from :class:`WebSocketBinarySender`.
+    """
+
+    mode = "text"
+
+    async def send(self, message: RpcMessage) -> None:
+        sid = self.session_id
+        if sid and 'sessionId' not in message.get('meta', {}):
+            message.setdefault('meta', {})['sessionId'] = sid
+        broken = False
+
+        try:
+            await self.ensure_connected()
+            await self.ws.send(encode_text_message(message))
+        except ConnectionClosed:
+            local_addr = self.ws.local_address
+            remote_addr = self.ws.remote_address
+            print(f"[WebSocket] broken Reconnected: local port {local_addr[1]}, remote port {remote_addr[1]}")
+            broken = True
+        if broken:
+            raise Exception('failed to send message,ws broken')
+
+
 # ---------------------------------------------------------------------------
 # Server side
 # ---------------------------------------------------------------------------
@@ -179,16 +260,26 @@ async def createServer(
     host: str = "localhost",
     port: int = 8765,
     path: str = "/",
-) -> Tuple[Callable[[Any], Any], Any,MessageReceiver]:
+    mode: Literal["binary", "text"] = "binary",
+    *,
+    max_size: int = 10 * 1024 * 1024,
+) -> Tuple[Callable[[Any], Any], Any, MessageReceiver]:
     """Create a WebSocket-based RPC server.
 
     Returns ``(serve, ws_server)`` where ``serve`` is an async function that
     registers the main object and blocks until the server is closed.
     ``ws_server`` is the underlying WebSocket server for lifecycle management.
 
+    Parameters
+    ----------
+    mode : ``'binary'`` | ``'text'``
+        ``'binary'`` (default) uses CBOR encoding;
+        ``'text'`` uses JSON with base64-encoded bytes.
+
     Usage::
 
         serve, ws_server = await createServer('myServer', 'localhost', 8765)
+        serve, ws_server = await createServer('myServer', 'localhost', 8765, mode='text')
         await serve(MyService())  # blocks until ws_server is closed
     """
     serverReceiver: MessageReceiver = MessageReceiver(hostId)
@@ -199,13 +290,17 @@ async def createServer(
         remote_addr = ws.remote_address
         print(f'[WebSocket] Server connection handled: local port {local_addr[1]}, remote port {remote_addr[1]}, ws_id={id(ws)}')
 
-        conn_sender: WebSocketBinarySender = WebSocketBinarySender(ws, None)
+        SenderCls = WebSocketTextSender if mode == "text" else WebSocketBinarySender
+        conn_sender: WebSocketBinarySender = SenderCls(ws, None)
         conn_client: Client = Client(hostId)
 
         def setSessiont(data):
             session_id: str = data.get('meta',{}).get('sessionId')
             if(not session_id):
                 session_id=str(uuid.uuid4())
+                print('new session',session_id)
+            else:
+                print(session_id)
 
             # Register sender in session map at connection time
             conn_sender.session_id=session_id
@@ -217,7 +312,10 @@ async def createServer(
 
         try:
             async for raw in ws:
-                data = cbor2.loads(raw)
+                if isinstance(raw, str):
+                    data = decode_text_message(raw)
+                else:
+                    data = cbor2.loads(raw)
                 if(first):
                     first=False
                     setSessiont(data)
@@ -227,7 +325,7 @@ async def createServer(
             traceback.print_exc()
             pass
 
-    ws_server: WebSocketServer = await websockets.serve(_onWsConnected, host, port)
+    ws_server: WebSocketServer = await websockets.serve(_onWsConnected, host, port, max_size=max_size)
 
     async def serve(mainObject: Any) -> Tuple[MessageReceiver, Callable[[Any], Any]]:
         serverReceiver.setMain(mainObject)
@@ -246,6 +344,7 @@ async def createMain(
     host: str = "localhost",
     port: int = 8765,
     path: str = "/",
+    mode: Literal["binary", "text"] = "binary",
     *,
     max_retries: int = 0,
     retry_delay: float = 1.0,
@@ -263,8 +362,11 @@ async def createMain(
     * When the background listen loop detects a closed connection, it
       reconnects and continues receiving.
 
-    Reconnection parameters
-    -----------------------
+    Parameters
+    ----------
+    mode : ``'binary'`` | ``'text'``
+        ``'binary'`` (default) uses CBOR encoding;
+        ``'text'`` uses JSON with base64-encoded bytes.
     max_retries : int
         Maximum consecutive reconnection attempts.  ``0`` (default) means
         **reconnect forever**.
@@ -281,13 +383,15 @@ async def createMain(
     Usage::
 
         client, main = await createMain('myClient', 'localhost', 8765)
+        client, main = await createMain('myClient', 'localhost', 8765, mode='text')
         result = await main.hello('world')
     """
     uri = f"ws://{host}:{port}{path}"
 
     client: Client = Client(hostId)
     messageReceiver: MessageReceiver = MessageReceiver(hostId)
-    sender: WebSocketBinarySender = WebSocketBinarySender(None)  # ws set below
+    SenderCls = WebSocketTextSender if mode == "text" else WebSocketBinarySender
+    sender: WebSocketBinarySender = SenderCls(None)  # ws set below
     client.setSender(lambda: sender)
 
     # Configure reconnection parameters on the sender
@@ -311,7 +415,7 @@ async def createMain(
     print(f"[WebSocket] Connected: local port {local_addr[1]}, remote port {remote_addr[1]}")
 
     # Start background listen — reconnect is triggered from inside
-    asyncio.ensure_future(_listen(sender, messageReceiver, client))
+    asyncio.ensure_future(_listen(sender, messageReceiver, client, mode=mode))
 
     main: Any = await client.getMain()
     return (client, main)
@@ -321,12 +425,16 @@ async def _listen(
     sender: WebSocketBinarySender,
     messageReceiver: MessageReceiver,
     client: Client,
+    mode: str = "binary",
 ) -> None:
     """Read messages from the sender's ws; reconnect and continue on drop."""
     while True:
         try:
             async for raw in sender.ws:
-                data = cbor2.loads(raw)
+                if isinstance(raw, str):
+                    data = decode_text_message(raw)
+                else:
+                    data = cbor2.loads(raw)
                 # Extract sessionId from meta and update sender
                 meta = data.get('meta') or {}
                 if meta.get('sessionId'):

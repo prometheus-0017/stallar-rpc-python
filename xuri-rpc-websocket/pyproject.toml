@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
+requires = ["setuptools>=68.0", "wheel", "build"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "xuri-rpc-websocket"
-version = "1.0.1"
+version = "1.1.0"
 description = "WebSocket sender for xuri-rpc"
 license = {text = "MIT"}
 authors = [
